@@ -1,0 +1,108 @@
+# Sparse GAN 配置文件
+# 使用 MinkowskiEngine 实现的 3D 体素生成对抗网络
+
+experiment:
+  name: "sparse_gan_3d_voxel"
+  output_dir: "./outputs/sparse_gan"
+  checkpoint_dir: "./checkpoints/sparse_gan"
+  log_dir: "./logs/sparse_gan"
+  seed: 42
+
+# 数据配置
+data:
+  train_data_dir: "/repos/datasets/batch_simulation_microtubule_20251017_2048_nifti/train"
+  val_data_dir: "/repos/datasets/batch_simulation_microtubule_20251017_2048_nifti/val"
+  voxel_size: 96                        # 体素分辨率 (各向同性)
+  voxel_resize: 128                    # 预处理resize，null表示不resize
+  cache_rate: 0.1                       # 缓存比例
+  num_workers: 2                        # DataLoader工作进程数
+  pin_memory: false
+  
+  # 稀疏化配置
+  sparsification:
+    threshold: 0.01                      # 体素值大于此阈值才保留（稀疏化）
+    min_voxels: 100                     # 每个样本最少保留的体素数
+  
+  # 数据增强
+  augmentation:
+    enabled: true
+    random_flip_prob: 0.5
+    use_patch_based: false              # GAN通常使用完整体积
+    use_center_crop_for_val: true
+  
+  # 限制数据集大小（用于快速测试）
+  max_data_size_for_train: 100         # null表示使用全部数据
+  max_data_size_for_val: 5
+
+# 生成器配置
+generator:
+  architecture: "sparse_unet"           # 架构类型
+  latent_dim: 256                       # 潜在向量维度
+  channels: [256, 128, 64, 32, 16]      # 每层通道数
+  kernel_size: 3                        # 卷积核大小
+  initial_tensor_stride: 96             # 初始稀疏张量步长（恢复为32）
+  output_channels: 1                    # 输出通道数
+  activation: "leaky_relu"              # 激活函数
+  use_batch_norm: true                  # 是否使用BatchNorm
+  
+# 判别器配置
+discriminator:
+  architecture: "sparse_resnet"         # 架构类型
+  channels: [16, 32, 64, 128, 256]      # 每层通道数
+  kernel_size: 3                        # 卷积核大小
+  activation: "leaky_relu"              # 激活函数
+  use_batch_norm: true                 # 是否使用BatchNorm (WGAN-GP 推荐为 false)
+  use_spectral_norm: false              # 是否使用谱归一化
+
+# 训练配置
+training:
+  # GAN类型
+  gan_type: "vanilla"                   # 'wgan-gp', 'vanilla', 'lsgan'
+  
+  # 优化器
+  batch_size: 2                         # 批量大小
+  num_epochs: 400                       # 训练轮数
+  
+  generator_optimizer:
+    type: "adam"
+    lr: 0.0001
+    betas: [0.0, 0.9]                   # WGAN推荐参数
+    weight_decay: 0.0
+  
+  discriminator_optimizer:
+    type: "adam"
+    lr: 0.0001
+    betas: [0.0, 0.9]
+    weight_decay: 0.0
+  
+  # 学习率调度
+  scheduler:
+    type: "exponential"                 # 'exponential', 'cosine', 'step'
+    gamma: 0.99                         # ExponentialLR的衰减率
+  
+  # GAN训练策略
+  n_critic: 2                           # 每n次判别器更新一次生成器
+  gradient_penalty_weight: 10.0         # WGAN-GP的梯度惩罚权重
+  
+  # 日志和保存
+  log_interval: 5                      # 每N个batch打印日志
+  save_interval: 20                      # 每N个epoch保存模型
+  sample_interval: 2                    # 每N个epoch生成样本
+  num_samples: 4                        # 每次生成的样本数
+  
+  # 早停
+  early_stopping:
+    enabled: false
+    patience: 20
+    metric: "fid"                       # 监控指标
+
+# 评估配置
+evaluation:
+  metrics: ["fid", "inception_score"]   # 评估指标
+  num_samples: 10                      # 评估时生成的样本数
+
+# 设备配置
+device:
+  cuda: true                            # 是否使用CUDA
+  gpu_ids: [0]                          # GPU ID列表
+  mixed_precision: true                # 是否使用混合精度训练
